@@ -3,6 +3,8 @@
 ║  PROYECTO PALOMA — Parallel Logic Machine  ·  Simulador Python v2.0        ║
 ║  Prototec S.L. (~1998)                                                      ║
 ║                                                                              ║
+║  Homenaje a Paco Menéndez                                                    ║
+║                                                                              ║
 ║  Novedades v2:                                                               ║
 ║   · Repertorio completo de 64 instrucciones (6 bits OPCODE)                ║
 ║   · Parámetros de ejecución vía CLI (argparse)                              ║
