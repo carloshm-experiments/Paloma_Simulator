@@ -505,7 +505,9 @@ El **tiempo estimado** (`elapsed_ns`) usa el peor caso de latencia por fase y no
 
 ## 14. Referencias
 
-Los documentos técnicos en los que se basa este simulador son los siguientes, todos conservados en el archivo de la comunidad **El Mundo del Spectrum**.
+Los documentos técnicos en los que se basa este simulador son los siguientes, todos conservados en el archivo de la comunidad **El Mundo del Spectrum**. 
+
+https://www.elmundodelspectrum.com/descubrimos-proyecto-paloma-el-visionario-trabajo-al-que-paco-menendez-dedico-sus-ultimos-anos-de-vida/
 
 **Proyecto Paloma — Descripción de la arquitectura** (presentación). Prototec S.L., ~1998. 9 transparencias. Cubre la topología de la malla, el chip MMI, la tarjeta MMI y la PLM.
 
