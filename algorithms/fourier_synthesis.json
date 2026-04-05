@@ -1,0 +1,122 @@
+{
+  "metadata": {
+    "name": "Síntesis de Fourier Multi-Canal",
+    "description": "Reconstruye una señal como suma de armónicos, usando un acumulador de fase MULA en la primera fila del pipeline para generar el argumento trigonométrico creciente θ_j(i) = φ_j + i·2π·f_j/N. Las filas posteriores evalúan SIN(θ) y acumulan la energía absoluta. Demuestra el patrón PALOMA de 'PE generador de estado continuo' más SIN del grupo 7.",
+    "reference_formula": "E_j = Σ_{i=0}^{N-1} |A_j · sin(2π·f_j·i/N + φ_j)|",
+    "complexity": "5 etapas: MULA (fase acumulada) → SIN → MUL (amplitud) → ABS → MULA (energía L1)",
+    "opcodes_used": [
+      "MULA",
+      "SIN",
+      "MUL",
+      "ABS",
+      "MULA"
+    ],
+    "design_note": "El truco clave es la etapa 0: un PE con instrucción MULA y RESULT inicializado a φ_j (desde preload_result). Cada ciclo ejecuta R ← R + 1·FREQ_STEP_j, lo que hace que RESULT crezca linealmente como un contador de fase. FREQ_STEP se calcula en derived_spatial como FREQ × 2π/N, por lo que adapta automáticamente a cualquier tamaño de ventana N.",
+    "author": "ejemplo"
+  },
+  "defaults": {
+    "rows": 8,
+    "cols": 16,
+    "N": 256,
+    "M": 16
+  },
+  "sequence": {
+    "type": "ones"
+  },
+  "spatial": [
+    {
+      "name": "FREQ",
+      "type": "linspace",
+      "range": [
+        1.0,
+        8.0
+      ],
+      "description": "Frecuencias de los armónicos en ciclos por ventana (1..8)"
+    },
+    {
+      "name": "AMP",
+      "type": "random_uniform",
+      "range": [
+        0.5,
+        2.0
+      ],
+      "seed": 13,
+      "description": "Amplitudes de cada armónico por canal"
+    },
+    {
+      "name": "PHASE",
+      "type": "random_uniform",
+      "range": [
+        0.0,
+        6.2832
+      ],
+      "seed": 14,
+      "description": "Fases iniciales aleatorias por canal (radianes, 0..2π)"
+    }
+  ],
+  "derived_spatial": [
+    {
+      "name": "FREQ_STEP",
+      "numpy_expr": "FREQ * 2 * math.pi / N",
+      "description": "Incremento de fase por ciclo: Δθ_j = 2π·f_j/N"
+    },
+    {
+      "name": "INIT_PHASE",
+      "numpy_expr": "PHASE - FREQ * 2 * math.pi / N",
+      "description": "Fase inicial ajustada: φ_j - Δθ, para que tras la primera MULA el PE quede exactamente en φ_j (corrección del off-by-one del acumulador)"
+    }
+  ],
+  "pipeline": [
+    {
+      "stage": 0,
+      "instruction": "MULA",
+      "description": "Acumulador de fase: R ← R + 1·FREQ_STEP_j. Con init_val=PHASE_j, tras i ciclos: R = PHASE_j + i·FREQ_STEP_j = PHASE_j + 2π·f_j·i/N.",
+      "rega_source": "const:1.0",
+      "regb_source": "spatial:FREQ_STEP",
+      "preload_result": "INIT_PHASE",
+      "init_cnt_offset": 0
+    },
+    {
+      "stage": 1,
+      "instruction": "SIN",
+      "description": "Evaluar seno del ángulo acumulado — instrucción SIN del grupo 7 (latencia 20 ciclos).",
+      "rega_source": "stage:0",
+      "regb_source": "const:0.0",
+      "init_cnt_offset": 1
+    },
+    {
+      "stage": 2,
+      "instruction": "MUL",
+      "description": "Modular con amplitud: y = A_j · sin(θ_j).",
+      "rega_source": "spatial:AMP",
+      "regb_source": "stage:1",
+      "init_cnt_offset": 2
+    },
+    {
+      "stage": 3,
+      "instruction": "ABS",
+      "description": "Valor absoluto: |y| — necesario para acumular norma L1 en lugar de integral que se anularía.",
+      "rega_source": "stage:2",
+      "regb_source": "const:0.0",
+      "init_cnt_offset": 3
+    },
+    {
+      "stage": 4,
+      "instruction": "MULA",
+      "description": "Acumular norma L1: E_j += 1·|y_i|.",
+      "rega_source": "const:1.0",
+      "regb_source": "stage:3",
+      "init_cnt_offset": 4,
+      "init_val": 0.0
+    }
+  ],
+  "output": {
+    "stage": 4,
+    "accumulate_in_pe": true,
+    "postprocess": null,
+    "description": "Energía L1 absoluta acumulada por canal"
+  },
+  "reference": {
+    "numpy_expr": "np.array([np.sum(np.abs(AMP[j]*np.sin(2*np.pi*FREQ[j]*np.arange(N)/N + PHASE[j]))) for j in range(M)])"
+  }
+}

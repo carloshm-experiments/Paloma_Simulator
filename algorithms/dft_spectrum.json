@@ -1,0 +1,78 @@
+{
+  "metadata": {
+    "name": "Espectro DFT — Proyección Coseno por Canal",
+    "description": "Calcula la componente real de la DFT en frecuencias configurables por canal. Un acumulador de fase MULA en la primera fila genera el argumento coseno creciente θ_j(i) = 2π·FC_j·i/N; las filas siguientes evalúan COS y acumulan el producto interno con la señal.",
+    "reference_formula": "S_j = |(1/N) · Σ_{i=0}^{N-1} x_i · cos(2π·FC_j·i/N)|",
+    "complexity": "4 etapas: MULA (fase) → COS → MUL (proyección) → MULA (acumulador)",
+    "opcodes_used": ["MULA", "COS", "MUL", "MULA"],
+    "design_note": "El acumulador de fase se inicializa en -FREQ_STEP_j (via preload_result sobre PHASE_INIT) para compensar el off-by-one: tras la primera ejecución de MULA el PE queda en 0, por lo que COS(0)=1 corresponde correctamente a i=0 de la DFT.",
+    "author": "ejemplo"
+  },
+  "defaults": { "rows": 8, "cols": 16, "N": 512, "M": 16 },
+
+  "sequence": {
+    "type": "random_uniform", "range": [-1.0, 1.0],
+    "description": "Señal aleatoria: garantiza proyecciones no nulas en todas las frecuencias"
+  },
+
+  "spatial": [
+    {
+      "name": "FC",
+      "type": "linspace", "range": [0.5, 8.5],
+      "description": "Frecuencias de análisis por canal (ciclos por ventana)"
+    }
+  ],
+
+  "derived_spatial": [
+    {
+      "name": "FREQ_STEP",
+      "numpy_expr": "FC * 2 * math.pi / N",
+      "description": "Incremento de fase por ciclo: Δθ_j = 2π·FC_j/N"
+    },
+    {
+      "name": "PHASE_INIT",
+      "numpy_expr": "-FC * 2 * math.pi / N",
+      "description": "Valor inicial del acumulador: -Δθ_j. Tras la primera MULA el PE vale 0 (cos(0)=1, i=0 correcto)."
+    }
+  ],
+
+  "pipeline": [
+    {
+      "stage": 0, "instruction": "MULA",
+      "description": "Generador de fase: R ← R + 1·FREQ_STEP_j. Arranca en -Δθ para que en i=0 resulte θ=0.",
+      "rega_source": "const:1.0",
+      "regb_source": "spatial:FREQ_STEP",
+      "preload_result": "PHASE_INIT",
+      "init_cnt_offset": 0
+    },
+    {
+      "stage": 1, "instruction": "COS",
+      "description": "Base coseno de la DFT: cos(2π·FC_j·i/N) — instrucción COS del grupo 7.",
+      "rega_source": "stage:0", "regb_source": "const:0.0",
+      "init_cnt_offset": 1
+    },
+    {
+      "stage": 2, "instruction": "MUL",
+      "description": "Producto interno parcial: x_i · cos(θ_j).",
+      "rega_source": "sequence", "regb_source": "stage:1",
+      "init_cnt_offset": 2
+    },
+    {
+      "stage": 3, "instruction": "MULA",
+      "description": "Acumular producto interno: S_j += 1 · (x_i · cos(θ_j)).",
+      "rega_source": "const:1.0", "regb_source": "stage:2",
+      "init_cnt_offset": 3, "init_val": 0.0
+    }
+  ],
+
+  "output": {
+    "stage": 3,
+    "accumulate_in_pe": true,
+    "postprocess": "abs_divide_N",
+    "description": "|acc|/N → magnitud espectral normalizada en FC_j"
+  },
+
+  "reference": {
+    "numpy_expr": "np.array([abs(np.sum(x * np.cos(2*np.pi*FC[j]*np.arange(N)/N)))/N for j in range(M)])"
+  }
+}

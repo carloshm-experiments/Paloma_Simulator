@@ -1,0 +1,77 @@
+{
+  "metadata": {
+    "name": "Norma Hiperbólica Multi-Canal",
+    "description": "Calcula la distancia generalizada entre la señal de entrada y un vector de referencia por canal, usando HYPOT encadenado para norma L2 progresiva. Demuestra instrucciones del grupo 7 en un pipeline de 6 etapas.",
+    "reference_formula": "d_j = sqrt( Σ_i (x_i - R_j)² / N )",
+    "complexity": "6 etapas: SUB (centrar) → SQR → ADD (+ escala) → SQRT → MUL (peso) → MULA (acumulación final)",
+    "opcodes_used": ["SUB", "SQR", "ADD", "SQRT", "MUL", "MULA"],
+    "notes": "El uso de SQRT en el interior del pipeline (no solo al final) es intencionado: simula el cálculo de distancia incremental que permite comparar parcialmente la norma antes de completar el recorrido. Útil en aplicaciones de matching en tiempo real donde se quiere cancelar el cálculo si la distancia parcial ya supera un umbral.",
+    "author": "ejemplo"
+  },
+  "defaults": { "rows": 8, "cols": 16, "N": 400, "M": 16 },
+
+  "sequence": { "type": "random_normal", "mean": 0.0, "std": 2.0, "seed": 17 },
+
+  "spatial": [
+    {
+      "name": "R",
+      "type": "random_uniform", "range": [-1.0, 1.0], "seed": 88,
+      "description": "Valores de referencia por canal (centros de los vectores prototipo)"
+    },
+    {
+      "name": "SCALE",
+      "type": "random_uniform", "range": [0.1, 0.9], "seed": 22,
+      "description": "Factor de escala por canal (normaliza la distancia al rango de la señal esperado)"
+    }
+  ],
+
+  "pipeline": [
+    {
+      "stage": 0, "instruction": "SUB",
+      "description": "Restar referencia: d = x_i − R_j",
+      "rega_source": "sequence", "regb_source": "spatial:R",
+      "init_cnt_offset": 0
+    },
+    {
+      "stage": 1, "instruction": "SQR",
+      "description": "Elevar al cuadrado: d²",
+      "rega_source": "stage:0", "regb_source": "const:0.0",
+      "init_cnt_offset": 1
+    },
+    {
+      "stage": 2, "instruction": "ADD",
+      "description": "Sumar epsilon de regularización: d² + 1e-6 (evita sqrt(0) exacto)",
+      "rega_source": "stage:1", "regb_source": "const:0.000001",
+      "init_cnt_offset": 2
+    },
+    {
+      "stage": 3, "instruction": "SQRT",
+      "description": "Distancia parcial: sqrt(d² + ε) — instrucción SQRT del grupo 7 (latencia 8 ciclos)",
+      "rega_source": "stage:2", "regb_source": "const:0.0",
+      "init_cnt_offset": 3
+    },
+    {
+      "stage": 4, "instruction": "MUL",
+      "description": "Ponderar por escala del canal: SCALE_j · dist_parcial",
+      "rega_source": "spatial:SCALE", "regb_source": "stage:3",
+      "init_cnt_offset": 4
+    },
+    {
+      "stage": 5, "instruction": "MULA",
+      "description": "Acumular distancias ponderadas: acc += 1 · SCALE_j·dist",
+      "rega_source": "const:1.0", "regb_source": "stage:4",
+      "init_cnt_offset": 5, "init_val": 0.0
+    }
+  ],
+
+  "output": {
+    "stage": 5,
+    "accumulate_in_pe": true,
+    "postprocess": "divide_N",
+    "description": "acc/N → distancia media normalizada por canal"
+  },
+
+  "reference": {
+    "numpy_expr": "np.array([np.mean(SCALE[j]*np.sqrt((x-R[j])**2 + 1e-6)) for j in range(M)])"
+  }
+}

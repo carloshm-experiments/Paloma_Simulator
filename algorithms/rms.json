@@ -1,0 +1,53 @@
+{
+  "metadata": {
+    "name": "RMS con Ponderación por Canal",
+    "description": "Calcula el valor RMS de una señal senoidal ponderada por canal. Patrón típico de procesado de audio y vibración.",
+    "reference_formula": "rms_j = sqrt( (1/N) · Σ (W_j · x_i)² )",
+    "complexity": "3 etapas: MUL (ventana) → SQR → MULA (acumulación)",
+    "opcodes_used": ["MUL", "SQR", "MULA"],
+    "author": "ejemplo"
+  },
+  "defaults": { "rows": 6, "cols": 16, "N": 512, "M": 16 },
+
+  "sequence": { "type": "sine", "frequency": 4.0, "amplitude": 1.0, "phase": 0.0 },
+
+  "spatial": [
+    {
+      "name": "W",
+      "type": "random_uniform", "range": [0.5, 2.0], "seed": 77,
+      "description": "Ponderaciones por canal (ganancias de banda)"
+    }
+  ],
+
+  "pipeline": [
+    {
+      "stage": 0, "instruction": "MUL",
+      "description": "Aplicar ponderación: s = W_j · x_i",
+      "rega_source": "spatial:W", "regb_source": "sequence",
+      "init_cnt_offset": 0
+    },
+    {
+      "stage": 1, "instruction": "SQR",
+      "description": "s² = (W_j · x_i)²  — instrucción del grupo 7",
+      "rega_source": "stage:0", "regb_source": "const:0.0",
+      "init_cnt_offset": 1
+    },
+    {
+      "stage": 2, "instruction": "MULA",
+      "description": "acc += 1·s²  → acumulación de suma de cuadrados",
+      "rega_source": "const:1.0", "regb_source": "stage:1",
+      "init_cnt_offset": 2, "init_val": 0.0
+    }
+  ],
+
+  "output": {
+    "stage": 2,
+    "accumulate_in_pe": true,
+    "postprocess": "sqrt_divide_N",
+    "description": "sqrt(acc/N) → RMS por canal"
+  },
+
+  "reference": {
+    "numpy_expr": "np.array([np.sqrt(np.mean((W[j]*x)**2)) for j in range(M)])"
+  }
+}

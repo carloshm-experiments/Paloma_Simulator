@@ -1,0 +1,77 @@
+{
+  "metadata": {
+    "name": "Varianza Ponderada Multi-Canal",
+    "description": "Calcula media y varianza ponderada en dos pasadas mapeadas sobre el pipeline. Primera mitad del pipeline: media ponderada. Segunda mitad: acumulación de desviaciones al cuadrado.",
+    "reference_formula": "var_j = (1/N) · Σ W_j · (x_i - μ_j)²   donde  μ_j = (1/N)·Σ W_j·x_i",
+    "complexity": "6 etapas: MUL (pond.) → MULA (media) → SUB (centrar) → SQR → MUL (re-ponderar) → MULA (varianza)",
+    "opcodes_used": ["MUL", "MULA", "SUB", "SQR"],
+    "notes": "Simula un pipeline de 2 pasadas sobre el mismo dataset. La media μ_j se calcula en la primera mitad y se divide externamente antes de pasarla como offset. En hardware real se haría en 2 fases con recarga de INITVAL.",
+    "author": "ejemplo"
+  },
+  "defaults": { "rows": 8, "cols": 16, "N": 512, "M": 16 },
+
+  "sequence": { "type": "random_normal", "mean": 2.5, "std": 1.5, "seed": 99 },
+
+  "spatial": [
+    {
+      "name": "W",
+      "type": "random_uniform", "range": [0.2, 1.8], "seed": 44,
+      "description": "Ponderaciones positivas por canal (simulan importancia relativa de cada sensor)"
+    },
+    {
+      "name": "MU",
+      "type": "const", "value": 2.5,
+      "description": "Estimación inicial de la media por canal (en hardware real se cargaría tras la primera pasada)"
+    }
+  ],
+
+  "pipeline": [
+    {
+      "stage": 0, "instruction": "MUL",
+      "description": "Contribución ponderada: t = W_j · x_i",
+      "rega_source": "spatial:W", "regb_source": "sequence",
+      "init_cnt_offset": 0
+    },
+    {
+      "stage": 1, "instruction": "MULA",
+      "description": "Σ t → acumulación de la media ponderada (se usaría para precalcular μ_j)",
+      "rega_source": "const:1.0", "regb_source": "stage:0",
+      "init_cnt_offset": 1, "init_val": 0.0
+    },
+    {
+      "stage": 2, "instruction": "SUB",
+      "description": "Centrar muestra: d = x_i − μ_j",
+      "rega_source": "sequence", "regb_source": "spatial:MU",
+      "init_cnt_offset": 2
+    },
+    {
+      "stage": 3, "instruction": "SQR",
+      "description": "Desviación al cuadrado: d² = (x_i − μ_j)²",
+      "rega_source": "stage:2", "regb_source": "const:0.0",
+      "init_cnt_offset": 3
+    },
+    {
+      "stage": 4, "instruction": "MUL",
+      "description": "Re-ponderar desviación: W_j · d²",
+      "rega_source": "spatial:W", "regb_source": "stage:3",
+      "init_cnt_offset": 4
+    },
+    {
+      "stage": 5, "instruction": "MULA",
+      "description": "Σ W_j·d² → varianza ponderada acumulada",
+      "rega_source": "const:1.0", "regb_source": "stage:4",
+      "init_cnt_offset": 5, "init_val": 0.0
+    }
+  ],
+
+  "output": {
+    "stage": 5,
+    "accumulate_in_pe": true,
+    "postprocess": "divide_N",
+    "description": "acc/N → varianza ponderada normalizada por canal"
+  },
+
+  "reference": {
+    "numpy_expr": "np.array([np.sum(W[j]*(x - MU[j])**2)/N for j in range(M)])"
+  }
+}

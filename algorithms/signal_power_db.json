@@ -1,0 +1,61 @@
+{
+  "metadata": {
+    "name": "Potencia de Señal en dBW por Canal",
+    "description": "Calcula la potencia media de la señal de cada canal en decibelios (dBW). Demuestra el uso de LOG10 del grupo 7 vía el postprocesado divide_N_then_dB, que divide el acumulador de energía por N antes de tomar el logaritmo.",
+    "reference_formula": "P_dB_j = 10 · log10( (1/N) · Σ_{i=0}^{N-1} (G_j · x_i)² )",
+    "complexity": "3 etapas: MUL (ganancia) → SQR → MULA (acumulación de energía)",
+    "opcodes_used": ["MUL", "SQR", "MULA"],
+    "design_note": "Las 3 etapas del pipeline solo acumulan energía instantánea. La conversión a dBW ocurre en el post-procesado del simulador: divide_N_then_dB = 10·log10(acc/N). En hardware PALOMA real, la CPU host leería el registro RESULT del PE de salida, lo dividiría por N y calcularía el logaritmo — exactamente lo que modela el postprocesado.",
+    "author": "ejemplo"
+  },
+  "defaults": { "rows": 6, "cols": 16, "N": 1024, "M": 16 },
+
+  "sequence": { "type": "random_normal", "mean": 0.0, "std": 1.0, "seed": 55 },
+
+  "spatial": [
+    {
+      "name": "G",
+      "type": "random_uniform", "range": [0.5, 4.0], "seed": 31,
+      "description": "Ganancias por canal (modelan distintas impedancias o sensibilidades de sensor)"
+    }
+  ],
+
+  "pipeline": [
+    {
+      "stage": 0,
+      "instruction": "MUL",
+      "description": "Aplicar ganancia de canal: y = G_j · x_i.",
+      "rega_source": "spatial:G",
+      "regb_source": "sequence",
+      "init_cnt_offset": 0
+    },
+    {
+      "stage": 1,
+      "instruction": "SQR",
+      "description": "Potencia instantánea: y² = (G_j · x_i)² — instrucción SQR del grupo 7.",
+      "rega_source": "stage:0",
+      "regb_source": "const:0.0",
+      "init_cnt_offset": 1
+    },
+    {
+      "stage": 2,
+      "instruction": "MULA",
+      "description": "Acumular energía total: acc += 1 · y². MULA es el patrón canónico de PALOMA: R ← R + op1×op2.",
+      "rega_source": "const:1.0",
+      "regb_source": "stage:1",
+      "init_cnt_offset": 2,
+      "init_val": 0.0
+    }
+  ],
+
+  "output": {
+    "stage": 2,
+    "accumulate_in_pe": true,
+    "postprocess": "divide_N_then_dB",
+    "description": "10·log10(acc/N) → potencia media en dBW"
+  },
+
+  "reference": {
+    "numpy_expr": "np.array([10*np.log10(np.mean((G[j]*x)**2) + 1e-12) for j in range(M)])"
+  }
+}

@@ -1,0 +1,112 @@
+{
+  "metadata": {
+    "name": "Distancia de Mahalanobis Estandarizada por Canal",
+    "description": "Calcula la distancia normalizada de cada muestra a la media del canal, dividiendo por la desviación típica. Pipeline de 6 etapas que demuestra SUB, SQR, DIV, SQRT, MIN y MULA. La instrucción MIN (grupo 1) actúa como acotador de outliers sin necesidad de bifurcaciones — patrón canónico de dataflow en PALOMA.",
+    "reference_formula": "D_j = (1/N) · Σ min( sqrt((x_i - μ_j)² / σ_j²), MAX_SIGMA )",
+    "complexity": "6 etapas: SUB → SQR → DIV → SQRT → MIN (acotar outliers) → MULA",
+    "opcodes_used": [
+      "SUB",
+      "SQR",
+      "DIV",
+      "SQRT",
+      "MIN",
+      "MULA"
+    ],
+    "design_note": "La ausencia de bifurcaciones en PALOMA obliga a modelar el corte de outliers con MIN(z, MAX_SIGMA). Esto es conceptualmente limpio: MIN es determinista, tiene latencia fija de 2 ciclos, y permite al pipeline seguir fluyendo sin interrupciones. CLAMP existe en el repertorio pero actúa sobre RESULT acumulado del PE, no sobre la entrada; MIN opera sobre dos operandos explícitos y es la instrucción correcta para este propósito.",
+    "author": "ejemplo"
+  },
+  "defaults": {
+    "rows": 8,
+    "cols": 16,
+    "N": 512,
+    "M": 16
+  },
+  "sequence": {
+    "type": "random_normal",
+    "mean": 0.0,
+    "std": 2.0,
+    "seed": 41
+  },
+  "spatial": [
+    {
+      "name": "MU",
+      "type": "random_uniform",
+      "range": [
+        -1.0,
+        1.0
+      ],
+      "seed": 50,
+      "description": "Medias de referencia por canal"
+    },
+    {
+      "name": "SIG2",
+      "type": "random_uniform",
+      "range": [
+        0.5,
+        4.0
+      ],
+      "seed": 51,
+      "description": "Varianzas σ² por canal (SIG2 > 0)"
+    }
+  ],
+  "pipeline": [
+    {
+      "stage": 0,
+      "instruction": "SUB",
+      "description": "Residuo: d = x_i − μ_j.",
+      "rega_source": "sequence",
+      "regb_source": "spatial:MU",
+      "init_cnt_offset": 0
+    },
+    {
+      "stage": 1,
+      "instruction": "SQR",
+      "description": "Cuadrado del residuo: d² = (x_i − μ_j)². Instrucción SQR del grupo 7.",
+      "rega_source": "stage:0",
+      "regb_source": "const:0.0",
+      "init_cnt_offset": 1
+    },
+    {
+      "stage": 2,
+      "instruction": "DIV",
+      "description": "Normalizar por varianza: d²/σ² — distancia de Mahalanobis al cuadrado. DIV tiene latencia 32 ciclos (la más alta del repertorio base), lo que convierte esta etapa en el cuello de botella.",
+      "rega_source": "stage:1",
+      "regb_source": "spatial:SIG2",
+      "init_cnt_offset": 2
+    },
+    {
+      "stage": 3,
+      "instruction": "SQRT",
+      "description": "Distancia de Mahalanobis: z = sqrt(d²/σ²) = |d|/σ. SQRT del grupo 7, latencia 8 ciclos.",
+      "rega_source": "stage:2",
+      "regb_source": "const:0.0",
+      "init_cnt_offset": 3
+    },
+    {
+      "stage": 4,
+      "instruction": "MIN",
+      "description": "Acotar a 5σ: z_c = min(z, 5). MIN(op1, op2) opera sobre dos operandos explícitos — el equivalente dataflow de un clamp sin bifurcación.",
+      "rega_source": "stage:3",
+      "regb_source": "const:5.0",
+      "init_cnt_offset": 4
+    },
+    {
+      "stage": 5,
+      "instruction": "MULA",
+      "description": "Acumular distancias: D_j += 1·z_c. Tras N ciclos RESULT = Σ z_c_i.",
+      "rega_source": "const:1.0",
+      "regb_source": "stage:4",
+      "init_cnt_offset": 5,
+      "init_val": 0.0
+    }
+  ],
+  "output": {
+    "stage": 5,
+    "accumulate_in_pe": true,
+    "postprocess": "divide_N",
+    "description": "acc/N → distancia media de Mahalanobis normalizada por canal"
+  },
+  "reference": {
+    "numpy_expr": "np.array([np.mean(np.minimum(np.sqrt((x-MU[j])**2/np.maximum(SIG2[j],1e-9)), 5.0)) for j in range(M)])"
+  }
+}

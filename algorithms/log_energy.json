@@ -1,0 +1,77 @@
+{
+  "metadata": {
+    "name": "Detector de Energía Logarítmica por Canal",
+    "description": "Acumula la energía logarítmica de la señal ponderada por canal: E_j = Σ ln(1 + G_j·|x_i|). Esta función crece sin límite pero a velocidad decreciente, lo que la hace muy robusta a picos esporádicos y útil en detección de actividad vocal (VAD), análisis de vibraciones estructurales y compresión perceptual de audio. Demuestra LN del grupo 7 (latencia 16 ciclos) y el encadenamiento ABS→MUL→ADD→LN→MULA en 5 etapas.",
+    "reference_formula": "E_j = Σ_{i=0}^{N-1} ln(1 + G_j · |x_i|)",
+    "complexity": "5 etapas: ABS → MUL (ganancia) → INC (+ 1) → LN → MULA (acumulación)",
+    "opcodes_used": ["ABS", "MUL", "INC", "LN", "MULA"],
+    "design_note": "La instrucción INC (R ← op1 + 1) es del grupo 1 y tarda solo 1 ciclo. LN del grupo 7 es la operación más costosa (16 ciclos), lo que convierte esta etapa en el cuello de botella del pipeline. En hardware PALOMA real, esto obliga a que la fase de ejecución del ciclo de máquina espere 16 ciclos antes de poder transmitir resultados.",
+    "author": "ejemplo"
+  },
+  "defaults": { "rows": 8, "cols": 16, "N": 512, "M": 16 },
+
+  "sequence": { "type": "random_normal", "mean": 0.0, "std": 1.5, "seed": 77 },
+
+  "spatial": [
+    {
+      "name": "G",
+      "type": "random_uniform", "range": [0.3, 3.0], "seed": 19,
+      "description": "Ganancias por canal: controlan la sensibilidad relativa de cada detector"
+    }
+  ],
+
+  "pipeline": [
+    {
+      "stage": 0,
+      "instruction": "ABS",
+      "description": "Rectificación de onda completa: |x_i|. Necesaria porque ln de número negativo es indefinido.",
+      "rega_source": "sequence",
+      "regb_source": "const:0.0",
+      "init_cnt_offset": 0
+    },
+    {
+      "stage": 1,
+      "instruction": "MUL",
+      "description": "Aplicar ganancia del canal: G_j · |x_i|.",
+      "rega_source": "spatial:G",
+      "regb_source": "stage:0",
+      "init_cnt_offset": 1
+    },
+    {
+      "stage": 2,
+      "instruction": "INC",
+      "description": "Desplazar al dominio positivo: 1 + G_j·|x_i|. Garantiza que el argumento del logaritmo sea ≥ 1.",
+      "rega_source": "stage:1",
+      "regb_source": "const:0.0",
+      "init_cnt_offset": 2
+    },
+    {
+      "stage": 3,
+      "instruction": "LN",
+      "description": "Logaritmo natural: ln(1 + G_j·|x_i|) — instrucción LN del grupo 7 (latencia 16 ciclos). La operación más costosa del pipeline.",
+      "rega_source": "stage:2",
+      "regb_source": "const:0.0",
+      "init_cnt_offset": 3
+    },
+    {
+      "stage": 4,
+      "instruction": "MULA",
+      "description": "Acumular energía logarítmica: E_j += 1 · ln(1 + G_j·|x_i|).",
+      "rega_source": "const:1.0",
+      "regb_source": "stage:3",
+      "init_cnt_offset": 4,
+      "init_val": 0.0
+    }
+  ],
+
+  "output": {
+    "stage": 4,
+    "accumulate_in_pe": true,
+    "postprocess": null,
+    "description": "Energía logarítmica total acumulada por canal a lo largo de N muestras"
+  },
+
+  "reference": {
+    "numpy_expr": "np.array([np.sum(np.log(1 + G[j]*np.abs(x))) for j in range(M)])"
+  }
+}
