@@ -1,5 +1,6 @@
 # Simulador del Proyecto PALOMA
 ### Parallel Logic Machine — Prototec S.L. (~1998)  ·  v2.0
+### Homenaje a Paco Menéndez
 
 > Simulador Python de la arquitectura de computación masivamente paralela **PALOMA** (*Parallel Logic Machine*), desarrollada por Prototec S.L. en España a finales de los años noventa. El proyecto proponía una alternativa radicalmente distinta a los multiprocesadores convencionales de la época mediante el concepto de **Memoria Matricial Inteligente (MMI)**: una malla de procesadores sencillos conectados únicamente a sus cuatro vecinos inmediatos, capaz de escalar de forma perfectamente lineal. El simulador modela fielmente la arquitectura con el repertorio completo de 64 instrucciones, permite lanzar algoritmos propios desde archivos JSON y acepta todos sus parámetros desde la línea de comandos.
 
